@@ -43,6 +43,18 @@ const INITIAL_PODCASTS: Podcast[] = [
     transcript: "Nick paddled out into the cold ocean...",
     duration: '05:00',
     createdAt: new Date(),
+  },
+  {
+    id: '2',
+    title: 'TEST',
+    topic: 'TEST',
+    words: ['surf', 'ocean', 'legendary'],
+    // 🔴 IMPORTANT: PASTE YOUR REAL GOOGLE DRIVE LINK BELOW 🔴
+    // It must look like: https://drive.google.com/uc?export=download&id=YOUR_FILE_ID
+    audioUrl: 'https://actions.google.com/sounds/v1/ambiences/coffee_shop.ogg', 
+    transcript: "Nick paddled out into the cold ocean...",
+    duration: '05:00',
+    createdAt: new Date(),
   }
 ];
 
@@ -166,28 +178,44 @@ export default function App() {
   // --- AUDIO LOGIC ---
   useEffect(() => {
     if (currentPodcast?.audioUrl) {
-      // Create new audio object
+      // Cleanup old audio
       if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current.src = "";
         audioRef.current = null;
       }
       
       const audio = new Audio(currentPodcast.audioUrl);
+      audio.crossOrigin = "anonymous"; // Try to handle CORS if server allows
       audioRef.current = audio;
 
       // Event Listeners
-      audio.addEventListener('loadedmetadata', () => setDuration(audio.duration));
-      audio.addEventListener('timeupdate', () => setCurrentTime(audio.currentTime));
-      audio.addEventListener('ended', () => setIsPlaying(false));
-      audio.addEventListener('error', (e) => {
-        console.error("Audio Error:", e);
-        alert("Error playing audio. The Google Drive link might be restricted or invalid.");
+      const onLoadedMetadata = () => setDuration(audio.duration);
+      const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+      const onEnded = () => setIsPlaying(false);
+      const onError = (e: Event) => {
+        console.error("Audio Load Error:", e, audio.error);
+        alert(`Error playing audio. Code: ${audio.error?.code}. Message: ${audio.error?.message}. \n\nTip: Google Drive blocks large WAV files. Try using an MP3.`);
         setIsPlaying(false);
-      });
+      };
+
+      audio.addEventListener('loadedmetadata', onLoadedMetadata);
+      audio.addEventListener('timeupdate', onTimeUpdate);
+      audio.addEventListener('ended', onEnded);
+      audio.addEventListener('error', onError);
 
       // Reset state
       setIsPlaying(false);
       setCurrentTime(0);
+
+      // Cleanup function
+      return () => {
+        audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+        audio.removeEventListener('timeupdate', onTimeUpdate);
+        audio.removeEventListener('ended', onEnded);
+        audio.removeEventListener('error', onError);
+        audio.pause();
+      };
     }
   }, [currentPodcast]);
 
@@ -202,6 +230,7 @@ export default function App() {
       if (playPromise !== undefined) {
         playPromise.catch(error => {
           console.error("Playback failed:", error);
+          alert("Browser blocked autoplay. Please interact with the page first.");
           setIsPlaying(false);
         });
       }
