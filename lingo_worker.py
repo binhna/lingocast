@@ -5,19 +5,33 @@ import time
 import json 
 import subprocess
 import base64
+from dotenv import load_dotenv
+from supabase import create_client, Client
+# StorageError import removed to avoid version-specific import issues
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Initialize Supabase client
+supabase: Client = create_client(
+    os.getenv('SUPABASE_URL', ''),
+    os.getenv('SUPABASE_ANON_KEY', '')
+)
 
 # --- CONFIGURATION (UPDATE THIS) ---
 # Your specific Python script to run the TTS/story generation
 # We will use this path to execute the script in a subprocess.
-GENERATOR_SCRIPT_PATH = "/home/ben/miniconda3/envs/tts/bin/python inference/effortless_story_generator.py"
+PYTHON_EXECUTABLE = "/home/ben/miniconda3/envs/tts/bin/python"
+GENERATOR_SCRIPT_PATH = "/home/ben/projects/others/chatterbox/inference/effortless_story_generator.py"
+CHATTERBOX_DIR = "/home/ben/projects/others/chatterbox"
 
 # Temporary folder to save the generated audio file
-OUTPUT_DIR = os.path.join(os.path.expanduser('~'), 'lingocast_output')
+OUTPUT_DIR = "/home/ben/projects/others/chatterbox/output_audio" #os.path.join(os.path.expanduser('~'), 'lingocast_output')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Supabase Credentials (You need to get these from your Supabase dashboard)
-SUPABASE_URL = "YOUR_SUPABASE_URL_HERE" # e.g., https://xyz123.supabase.co
-SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY_HERE" # Get this from Settings -> API
+SUPABASE_URL = "https://xgitkcmskcqghwaiioue.supabase.co" # e.g., https://xyz123.supabase.co
+SUPABASE_ANON_KEY = os.getenv('SUPABASE_ANON_KEY') # Get this from .env file
 
 # The bucket name you created in Supabase Storage
 SUPABASE_BUCKET = "podcasts"
@@ -63,13 +77,14 @@ def run_local_tts_script(input_txt_path, main_voice, guest_voice):
     # NOTE: You must check where your actual script saves the file. 
     # For now, we assume it saves to a temporary location we can grab.
     
-    # Let's assume your script saves the output WAV file next to the input.txt, 
-    # but with a .wav extension. You might need to adjust this path based on your 
-    # actual generator script's behavior.
-    output_wav_path = os.path.join(os.path.dirname(input_txt_path), 
-                                   os.path.basename(input_txt_path).replace(".txt", ".wav"))
+    # The script generates output with pattern: {input_basename}_{main_voice}_{guest_voice}_output.{format}
+    # For input.txt with voices albo/lachlan, output would be: input_albo_lachlan_output.mp3
+    input_basename = os.path.basename(input_txt_path).replace(".txt", "")
+    output_filename = f"{input_basename}_{main_voice}_{guest_voice}_output.mp3"
+    output_wav_path = os.path.join(os.path.dirname(input_txt_path), output_filename)
 
     command = [
+        PYTHON_EXECUTABLE,
         GENERATOR_SCRIPT_PATH,
         "--main_voice", main_voice,
         "--guest_voice", guest_voice,
@@ -84,7 +99,7 @@ def run_local_tts_script(input_txt_path, main_voice, guest_voice):
             capture_output=True,
             text=True,
             check=True,  # This will raise a CalledProcessError if the script fails
-            cwd=os.path.dirname(GENERATOR_SCRIPT_PATH) # Run from the script's directory for relative paths
+            cwd=CHATTERBOX_DIR # Run from the chatterbox directory for relative paths
         )
         print("TTS Script Output:\n", result.stdout)
         
@@ -105,42 +120,51 @@ def run_local_tts_script(input_txt_path, main_voice, guest_voice):
 
 def upload_to_supabase(file_path, file_name):
     """Uploads a file to Supabase Storage and returns the public URL."""
-    if not all([SUPABASE_URL, SUPABASE_ANON_KEY]):
+    if not all([os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_ANON_KEY')]):
         print("Supabase credentials missing. Skipping upload.")
         return False, "Supabase not configured."
 
-    upload_url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{file_name}"
-
     try:
-        # 1. Read the file content
+        # Open the file in binary read mode
         with open(file_path, 'rb') as f:
-            file_data = f.read()
-
-        # 2. Upload using the REST API (requires header)
-        headers = {
-            "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-            "Content-Type": "audio/wav"  # Use the correct MIME type
-        }
+            # Upload the file to the specified bucket
+            response = supabase.storage.from_(SUPABASE_BUCKET).upload(
+                file=f,
+                path=file_name,
+                file_options={"content-type": "audio/mpeg", "cache-control": "3600"}
+            )
         
-        # Use a POST request for the upload
-        response = requests.post(
-            upload_url, 
-            data=file_data, 
-            headers=headers
-        )
-        response.raise_for_status() # Check for errors
+        # Check if the upload was successful
+        if response.status_code == 200:
+            print(f"File uploaded successfully to {SUPABASE_BUCKET}/{file_name}")
+            
+            # Retrieve the public URL
+            public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(file_name)
+            
+            if public_url:
+                # Remove any trailing question marks or whitespace
+                public_url = public_url.rstrip('?').strip()
+                print(f"Successfully uploaded to Supabase: {public_url}")
+                return True, public_url
+            else:
+                print("Failed to retrieve public URL.")
+                return False, "Failed to retrieve public URL."
+        else:
+            print(f"Upload failed: {response.json()}")
+            return False, f"Upload failed: {response.json()}"
 
-        # 3. Construct the public URL
-        public_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{file_name}"
-        print(f"Successfully uploaded to Supabase: {public_url}")
-        return True, public_url
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error during Supabase upload: {e.response.text if e.response else e}")
-        return False, f"Supabase Upload Error: {e.response.text if e.response else e}"
+    except FileNotFoundError:
+        error_msg = f"Error: The file '{file_path}' was not found."
+        print(error_msg)
+        return False, error_msg
     except Exception as e:
-        print(f"General error during Supabase process: {e}")
-        return False, f"General Supabase Error: {e}"
+        error_msg = f"A storage or unexpected error occurred: {e}"
+        print(error_msg)
+        return False, error_msg
+    except Exception as e:
+        error_msg = f"An unexpected error occurred: {e}"
+        print(error_msg)
+        return False, error_msg
 
 # --- FLASK HANDLER ---
 
@@ -175,7 +199,10 @@ def handle_generate():
     output_wav_path = result_path_or_error
     
     # 3. UPLOAD TO SUPABASE
-    upload_filename = f"{story_title}_{int(time.time())}.wav"
+    # Create a safe filename for upload (remove spaces, special chars, use correct extension)
+    safe_title = "".join(c for c in story_title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+    safe_title = safe_title.replace(' ', '_')
+    upload_filename = f"{safe_title}_{int(time.time())}.mp3"
     upload_success, public_url_or_error = upload_to_supabase(output_wav_path, upload_filename)
 
     if not upload_success:
@@ -193,20 +220,35 @@ def handle_generate():
     })
 
 if __name__ == '__main__':
-    if not all([SUPABASE_URL, SUPABASE_ANON_KEY]):
+    if not all([os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_ANON_KEY')]):
         print("\n⚠️ WARNING: Supabase credentials are not configured. Upload step will fail.")
-        print("Please update SUPABASE_URL and SUPABASE_ANON_KEY in lingo_worker.py")
+        print("Please add SUPABASE_URL and SUPABASE_ANON_KEY to your .env file")
     
     if not os.path.exists(GENERATOR_SCRIPT_PATH):
         print(f"\n🚨 FATAL: TTS script not found at {GENERATOR_SCRIPT_PATH}. Please update GENERATOR_SCRIPT_PATH.")
+    
+    if not os.path.exists(PYTHON_EXECUTABLE):
+        print(f"\n🚨 FATAL: Python executable not found at {PYTHON_EXECUTABLE}. Please update PYTHON_EXECUTABLE.")
         
     print("Starting Flask worker...")
     
-    # Install requests package if missing
+    # Install required packages if missing
     try:
         import requests
     except ImportError:
         print("Installing required 'requests' package...")
         subprocess.run(['pip', 'install', 'requests'])
+    
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        print("Installing required 'python-dotenv' package...")
+        subprocess.run(['pip', 'install', 'python-dotenv'])
+    
+    try:
+        from supabase import create_client
+    except ImportError:
+        print("Installing required 'supabase' package...")
+        subprocess.run(['pip', 'install', 'supabase'])
 
     app.run(host='0.0.0.0', port=5000)
