@@ -6,14 +6,11 @@ import {
   SkipBack, 
   X, 
   Settings, 
-  Database, 
   Headphones, 
   BookOpen, 
   Mic2,
-  Server,
   Loader2,
-  CheckCircle2,
-  AlertCircle
+  CheckCircle2
 } from 'lucide-react';
 
 // --- Types ---
