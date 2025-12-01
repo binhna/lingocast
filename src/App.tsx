@@ -112,7 +112,7 @@ export default function App() {
   
   // Settings (Now includes voice selections)
   const [settings, setSettings] = useState<AppSettings>({
-    n8nWebhookUrl: 'http://localhost:5000/generate',
+    n8nWebhookUrl: import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://chatbot.soranchi.me/webhook/generate-story',
     mainVoice: 'albo', 
     guestVoice: 'lachlan',
   });
