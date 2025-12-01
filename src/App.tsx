@@ -27,8 +27,17 @@ interface Podcast {
 
 interface AppSettings {
   n8nWebhookUrl: string;
-  voiceId: string;
+  mainVoice: string; // New state field
+  guestVoice: string; // New state field
 }
+
+// --- VOICE OPTIONS (Example voices from your script context: albo, lachlan) ---
+const VOICE_OPTIONS = [
+  { id: 'albo', name: 'Albo (Speaker A)' },
+  { id: 'lachlan', name: 'Lachlan (Speaker B)' },
+  { id: 'custom_m', name: 'Narrator Male' },
+  { id: 'custom_f', name: 'Narrator Female' },
+];
 
 // --- Mock Data ---
 const INITIAL_PODCASTS: Podcast[] = [
@@ -84,7 +93,7 @@ const INITIAL_PODCASTS: Podcast[] = [
 }
 ];
 
-// --- Components ---
+// --- Components (omitted for brevity, assume they are present and correct) ---
 const Button = ({ children, onClick, variant = 'primary', className = '', disabled = false, icon: Icon }: any) => {
   const baseStyle = "flex items-center justify-center px-4 py-2 rounded-xl font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none";
   const variants = {
@@ -133,10 +142,12 @@ const TagInput = ({ words, setWords }: { words: string[], setWords: (w: string[]
   );
 };
 
+// --- Main App Component ---
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'generate' | 'library' | 'settings'>('generate');
   const [podcasts, setPodcasts] = useState<Podcast[]>(INITIAL_PODCASTS);
-  const [currentPodcast, setCurrentPodcast] = useState<Podcast | null>(null);
+  const [currentPodcast, setCurrentPodcast] = useState<Podcast | null>(INITIAL_PODCASTS[0]); // Load the first one
   
   // Generator State
   const [topic, setTopic] = useState('');
@@ -145,10 +156,11 @@ export default function App() {
   const [progressStep, setProgressStep] = useState(0);
   const [statusMsg, setStatusMsg] = useState('');
   
-  // Settings
+  // Settings (Now includes voice selections)
   const [settings, setSettings] = useState<AppSettings>({
     n8nWebhookUrl: 'https://chatbot.soranchi.me/webhook/generate-story',
-    voiceId: 'en-US-Standard-C'
+    mainVoice: 'albo', 
+    guestVoice: 'lachlan',
   });
 
   // --- AUDIO PLAYER STATE ---
@@ -167,7 +179,12 @@ export default function App() {
       const response = await fetch(settings.n8nWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, words })
+        body: JSON.stringify({ 
+          topic: topic, 
+          words: words,
+          mainVoice: settings.mainVoice, // NEW
+          guestVoice: settings.guestVoice // NEW
+        })
       });
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
@@ -181,12 +198,12 @@ export default function App() {
 
       const newPodcast: Podcast = {
         id: Date.now().toString(),
-        title: topic,
+        title: data.storyTitle || topic, // Use the title returned from Python
         topic: topic,
         words: [...words],
         transcript: data.transcript || "No transcript returned.",
         audioUrl: data.audioUrl, 
-        duration: '00:00', // Will be updated on load
+        duration: '00:00',
         createdAt: new Date(),
       };
 
@@ -195,7 +212,7 @@ export default function App() {
       setActiveTab('library');
 
     } catch (error) {
-      alert("Failed to connect! Check n8n server.");
+      alert("Failed to connect or generate! Check the n8n execution log.");
     } finally {
       setIsGenerating(false);
     }
@@ -204,7 +221,6 @@ export default function App() {
   // --- AUDIO LOGIC ---
   useEffect(() => {
     if (currentPodcast?.audioUrl) {
-      // Cleanup old audio
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";
@@ -212,7 +228,7 @@ export default function App() {
       }
       
       const audio = new Audio(currentPodcast.audioUrl);
-      audio.crossOrigin = "anonymous"; // Try to handle CORS if server allows
+      audio.crossOrigin = "anonymous";
       audioRef.current = audio;
 
       // Event Listeners
@@ -221,7 +237,7 @@ export default function App() {
       const onEnded = () => setIsPlaying(false);
       const onError = (e: Event) => {
         console.error("Audio Load Error:", e, audio.error);
-        alert(`Error playing audio. Code: ${audio.error?.code}. Message: ${audio.error?.message}. \n\nCheck if your Storage link is public.`);
+        alert(`Error: Audio file failed to load. Check that the Supabase link is valid and Public.`);
         setIsPlaying(false);
       };
 
@@ -230,11 +246,9 @@ export default function App() {
       audio.addEventListener('ended', onEnded);
       audio.addEventListener('error', onError);
 
-      // Reset state
       setIsPlaying(false);
       setCurrentTime(0);
 
-      // Cleanup function
       return () => {
         audio.removeEventListener('loadedmetadata', onLoadedMetadata);
         audio.removeEventListener('timeupdate', onTimeUpdate);
@@ -247,7 +261,7 @@ export default function App() {
 
   // Handle Play/Pause Toggle
   const togglePlay = () => {
-    if (!audioRef.current) return;
+    if (!audioRef.current || !currentPodcast?.audioUrl) return;
     
     if (isPlaying) {
       audioRef.current.pause();
@@ -257,7 +271,6 @@ export default function App() {
         playPromise.catch(error => {
           console.error("Playback failed:", error);
           alert("Browser blocked autoplay. Please interact with the page first.");
-          setIsPlaying(false);
         });
       }
     }
@@ -274,7 +287,7 @@ export default function App() {
   };
 
   const formatTime = (time: number) => {
-    if (isNaN(time)) return "0:00";
+    if (isNaN(time) || time < 0) return "0:00";
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
@@ -312,6 +325,31 @@ export default function App() {
                     <label className="block text-sm font-medium text-slate-400 mb-2">Topic</label>
                     <textarea value={topic} onChange={(e) => setTopic(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-slate-200 h-32" placeholder="E.g., A mystery set in a futuristic coffee shop..." />
                   </div>
+                  
+                  {/* VOICE SELECTION CONTROLS (NEW) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Main Speaker (A)</label>
+                        <select 
+                            value={settings.mainVoice}
+                            onChange={(e) => setSettings({...settings, mainVoice: e.target.value})}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200"
+                        >
+                            {VOICE_OPTIONS.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                        </select>
+                     </div>
+                     <div>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Guest Speaker (B)</label>
+                        <select 
+                            value={settings.guestVoice}
+                            onChange={(e) => setSettings({...settings, guestVoice: e.target.value})}
+                            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200"
+                        >
+                            {VOICE_OPTIONS.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                        </select>
+                     </div>
+                  </div>
+                  
                   <div>
                     <label className="block text-sm font-medium text-slate-400 mb-2">Target Vocabulary</label>
                     <TagInput words={words} setWords={setWords} />
@@ -342,9 +380,10 @@ export default function App() {
           </div>
         )}
 
-        {/* LIBRARY & PLAYER */}
+        {/* LIBRARY & PLAYER (omitted for brevity, remains the same) */}
         {(activeTab === 'library' || activeTab === 'settings') && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
+            {/* List */}
             <div className={`lg:col-span-4 space-y-4 ${currentPodcast && activeTab !== 'settings' ? 'hidden lg:block' : 'block'} ${activeTab === 'settings' ? 'hidden' : ''}`}>
               <h2 className="text-xl font-bold text-white mb-4">Your Library</h2>
               {podcasts.map((pod) => (
@@ -355,6 +394,7 @@ export default function App() {
               ))}
             </div>
 
+            {/* Player View */}
             <div className={`lg:col-span-8 ${activeTab === 'settings' ? 'hidden' : (!currentPodcast ? 'hidden lg:flex items-center justify-center' : 'block')}`}>
               {currentPodcast ? (
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
@@ -406,6 +446,7 @@ export default function App() {
                     <label className="block text-sm font-medium text-slate-400 mb-2">n8n Webhook URL</label>
                     <input type="text" value={settings.n8nWebhookUrl} onChange={(e) => setSettings({...settings, n8nWebhookUrl: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200" />
                   </div>
+                  {/* Voice settings are already in the Generator tab, removed from here for clarity */}
                 </div>
               </div>
             )}
