@@ -12,10 +12,11 @@ from supabase import create_client, Client
 # Load environment variables from .env file
 load_dotenv()
 
-# Initialize Supabase client
+# Initialize Supabase client with service role key for backend operations
+# Service role key bypasses RLS policies - required for database inserts
 supabase: Client = create_client(
     os.getenv('SUPABASE_URL', ''),
-    os.getenv('SUPABASE_ANON_KEY', '')
+    os.getenv('SUPABASE_SERVICE_ROLE_KEY', '') or os.getenv('SUPABASE_ANON_KEY', '')
 )
 
 # --- CONFIGURATION (UPDATE THIS) ---
@@ -118,9 +119,34 @@ def run_local_tts_script(input_txt_path, main_voice, guest_voice):
         return False, f"Script execution error: {e}"
 
 
+def save_episode_to_db(title, topic, words, transcript, audio_url):
+    """Saves the episode data to Supabase database."""
+    if not all([os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_ANON_KEY')]):
+        return False, "Supabase credentials not configured"
+    
+    try:
+        data = {
+            "id": title,  # Use title as id (prevents duplicates)
+            "title": title,
+            "topic": topic,
+            "words": words,
+            "transcript": transcript,
+            "audio_url": audio_url
+        }
+        
+        # Use upsert to handle duplicate titles gracefully
+        response = supabase.table('episodes').upsert(data).execute()
+        print(f"Episode saved to database: {title}")
+        return True, response.data[0] if response.data else None
+    except Exception as e:
+        error_msg = f"Failed to save to database: {e}"
+        print(error_msg)
+        return False, error_msg
+
+
 def upload_to_supabase(file_path, file_name):
     """Uploads a file to Supabase Storage and returns the public URL."""
-    if not all([os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_ANON_KEY')]):
+    if not os.getenv('SUPABASE_URL') or not (os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_ANON_KEY')):
         print("Supabase credentials missing. Skipping upload.")
         return False, "Supabase not configured."
 
@@ -212,17 +238,32 @@ def handle_generate():
             "audioUrl": "https://actions.google.com/sounds/v1/ambiences/coffee_shop.ogg" # Use a fallback
         }), 500
 
-    # 4. SEND FINAL RESPONSE
+    # 4. SAVE TO DATABASE
+    db_success, db_result = save_episode_to_db(
+        title=story_title,
+        topic=topic,
+        words=words,
+        transcript=story_transcript,
+        audio_url=public_url_or_error
+    )
+    
+    if not db_success:
+        print(f"Warning: Database save failed: {db_result}")
+        # Continue anyway, file is uploaded
+
+    # 5. SEND FINAL RESPONSE
     return jsonify({
         "storyTitle": story_title,
         "transcript": story_transcript,
-        "audioUrl": public_url_or_error
+        "audioUrl": public_url_or_error,
+        "episode": db_result if db_success else None
     })
 
 if __name__ == '__main__':
-    if not all([os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_ANON_KEY')]):
-        print("\n⚠️ WARNING: Supabase credentials are not configured. Upload step will fail.")
-        print("Please add SUPABASE_URL and SUPABASE_ANON_KEY to your .env file")
+    if not os.getenv('SUPABASE_URL') or not (os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_ANON_KEY')):
+        print("\n⚠️ WARNING: Supabase credentials are not configured. Upload and database save will fail.")
+        print("Please add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to your .env file")
+        print("NOTE: Service role key is required for backend database operations (bypasses RLS).")
     
     if not os.path.exists(GENERATOR_SCRIPT_PATH):
         print(f"\n🚨 FATAL: TTS script not found at {GENERATOR_SCRIPT_PATH}. Please update GENERATOR_SCRIPT_PATH.")
