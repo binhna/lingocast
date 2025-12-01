@@ -4,7 +4,6 @@ import {
   Pause, 
   SkipForward, 
   SkipBack, 
-  Plus, 
   X, 
   Settings, 
   Database, 
@@ -37,13 +36,15 @@ interface AppSettings {
 // --- Mock Data for Initial State ---
 const INITIAL_PODCASTS: Podcast[] = [
   {
-    id: '1',
-    title: 'The Baker of Veridia',
-    topic: 'A baker who solves problems',
-    words: ['meticulous', 'scrutinize', 'peculiar', 'alleviate', 'unprecedented', 'ubiquitous'],
-    transcript: "In the bustling city of Veridia, there lived a young baker named Leo. Leo was known for his **meticulous** attention to detail. Every morning, he would **scrutinize** the flour, ensuring it was of the finest quality. One day, a **peculiar** customer arrived, asking for a loaf that could **alleviate** sadness. Leo accepted the challenge, mixing ingredients with **unprecedented** care. The result was a pastry so delightful it became **ubiquitous** throughout the town, bringing joy to everyone who tasted it.",
-    duration: '02:14',
-    createdAt: new Date(Date.now() - 86400000),
+    id: '2',
+    title: 'Nick and the Legendary Surfboard',
+    topic: 'A story about surfing',
+    words: ['surf', 'ocean', 'legendary'],
+    // PASTE YOUR GOOGLE DRIVE DIRECT LINK BELOW
+    audioUrl: 'https://drive.google.com/uc?export=download&id=1uf41JhMVdWt18vwa_OtD93kiR2uXwDtw', 
+    transcript: "This is a placeholder transcript for Nick's story...",
+    duration: '05:00',
+    createdAt: new Date(),
   }
 ];
 
@@ -125,7 +126,7 @@ export default function App() {
   const [progressStep, setProgressStep] = useState(0);
   const [statusMsg, setStatusMsg] = useState('');
   
-  // Settings State - Pre-filled with your likely tunnel URL
+  // Settings State
   const [settings, setSettings] = useState<AppSettings>({
     n8nWebhookUrl: 'https://chatbot.soranchi.me/webhook/generate-story',
     voiceId: 'en-US-Standard-C'
@@ -143,7 +144,6 @@ export default function App() {
     "Finalizing..."
   ];
 
-  // --- The Real Connection Logic ---
   const handleGenerate = async () => {
     if (!topic || words.length === 0) return;
     
@@ -152,7 +152,6 @@ export default function App() {
     setStatusMsg(steps[0]);
     
     try {
-      // 1. Send data to n8n
       const response = await fetch(settings.n8nWebhookUrl, {
         method: 'POST',
         headers: {
@@ -168,17 +167,15 @@ export default function App() {
         throw new Error(`Server error: ${response.status}`);
       }
 
-      setStatusMsg(steps[2]); // "Synthesizing..."
+      setStatusMsg(steps[2]);
       setProgressStep(2);
 
-      // 2. Wait for JSON response { "transcript": "...", "audioUrl": "..." }
       const data = await response.json();
 
-      setStatusMsg(steps[4]); // "Finalizing..."
+      setStatusMsg(steps[4]);
       setProgressStep(4);
-      await new Promise(r => setTimeout(r, 500)); // Small pause for UX
+      await new Promise(r => setTimeout(r, 500));
 
-      // 3. Create the new podcast entry
       const newPodcast: Podcast = {
         id: Date.now().toString(),
         title: topic,
@@ -186,7 +183,7 @@ export default function App() {
         words: [...words],
         transcript: data.transcript || "No transcript returned from server.",
         audioUrl: data.audioUrl, 
-        duration: '03:45', // Placeholder duration
+        duration: '03:45',
         createdAt: new Date(),
       };
 
@@ -203,7 +200,6 @@ export default function App() {
     }
   };
 
-  // Handle Audio Playback
   useEffect(() => {
     if (currentPodcast?.audioUrl) {
       if (!audioRef.current) {
@@ -371,10 +367,11 @@ export default function App() {
         )}
 
         {/* VIEW: LIBRARY / PLAYER */}
-        {(activeTab === 'library' || activeTab === 'player') && (
+        {(activeTab === 'library' || activeTab === 'settings') && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
-             {/* List */}
-            <div className={`lg:col-span-4 space-y-4 ${currentPodcast ? 'hidden lg:block' : 'block'}`}>
+            
+            {/* List */}
+            <div className={`lg:col-span-4 space-y-4 ${currentPodcast && activeTab !== 'settings' ? 'hidden lg:block' : 'block'} ${activeTab === 'settings' ? 'hidden' : ''}`}>
               <h2 className="text-xl font-bold text-white mb-4">Your Library</h2>
               {podcasts.map((pod) => (
                 <div 
@@ -382,6 +379,7 @@ export default function App() {
                   onClick={() => {
                     setCurrentPodcast(pod);
                     setIsPlaying(false);
+                    setActiveTab('library');
                   }}
                   className={`p-4 rounded-xl border cursor-pointer transition-all hover:scale-[1.02] ${
                     currentPodcast?.id === pod.id 
@@ -407,7 +405,7 @@ export default function App() {
             </div>
 
             {/* Player View */}
-            <div className={`lg:col-span-8 ${!currentPodcast ? 'hidden lg:flex items-center justify-center' : 'block'}`}>
+            <div className={`lg:col-span-8 ${activeTab === 'settings' ? 'hidden' : (!currentPodcast ? 'hidden lg:flex items-center justify-center' : 'block')}`}>
               {currentPodcast ? (
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
                   {/* Header */}
@@ -448,7 +446,6 @@ export default function App() {
 
                   {/* Controls */}
                   <div className="p-6 bg-slate-900 border-t border-slate-800">
-                    {/* Progress Bar Mockup */}
                     <div className="w-full h-1.5 bg-slate-800 rounded-full mb-6 cursor-pointer group">
                       <div className="w-1/3 h-full bg-indigo-500 rounded-full group-hover:bg-indigo-400 relative">
                         <div className="w-3 h-3 bg-white rounded-full absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 shadow-lg" />
@@ -475,51 +472,51 @@ export default function App() {
                 </div>
               )}
             </div>
-          </div>
-        )}
-
-        {/* VIEW: SETTINGS */}
-        {activeTab === 'settings' && (
-          <div className="max-w-2xl mx-auto space-y-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
-            <h2 className="text-2xl font-bold text-white mb-6">Backend Configuration</h2>
             
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">n8n Webhook URL</label>
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={settings.n8nWebhookUrl}
-                    onChange={(e) => setSettings({...settings, n8nWebhookUrl: e.target.value})}
-                    placeholder="https://your-n8n-instance.com/webhook/..." 
-                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200"
-                  />
-                  <Button variant="secondary">Test</Button>
-                </div>
-                <p className="text-xs text-slate-500 mt-2">The endpoint that receives {`{ "topic": "...", "words": [...] }`}</p>
-              </div>
+            {/* VIEW: SETTINGS */}
+            {activeTab === 'settings' && (
+              <div className="lg:col-span-12 max-w-2xl mx-auto space-y-6 animate-in slide-in-from-bottom-4 fade-in duration-500 w-full">
+                <h2 className="text-2xl font-bold text-white mb-6">Backend Configuration</h2>
+                
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">n8n Webhook URL</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={settings.n8nWebhookUrl}
+                        onChange={(e) => setSettings({...settings, n8nWebhookUrl: e.target.value})}
+                        placeholder="https://your-n8n-instance.com/webhook/..." 
+                        className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200"
+                      />
+                      <Button variant="secondary">Test</Button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">The endpoint that receives {`{ "topic": "...", "words": [...] }`}</p>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">Voice Model</label>
-                <select 
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200"
-                  value={settings.voiceId}
-                  onChange={(e) => setSettings({...settings, voiceId: e.target.value})}
-                >
-                  <option value="en-US-Standard-C">English (US) - Female (Neural)</option>
-                  <option value="en-US-Standard-D">English (US) - Male (Neural)</option>
-                  <option value="en-GB-Standard-A">English (UK) - Female</option>
-                </select>
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">Voice Model</label>
+                    <select 
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200"
+                      value={settings.voiceId}
+                      onChange={(e) => setSettings({...settings, voiceId: e.target.value})}
+                    >
+                      <option value="en-US-Standard-C">English (US) - Female (Neural)</option>
+                      <option value="en-US-Standard-D">English (US) - Male (Neural)</option>
+                      <option value="en-GB-Standard-A">English (UK) - Female</option>
+                    </select>
+                  </div>
 
-              <div className="bg-amber-900/20 border border-amber-500/20 p-4 rounded-xl flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-amber-200">Self-Hosted Infrastructure</p>
-                  <p className="text-xs text-amber-200/60">Ensure your n8n instance allows CORS from this domain, or set up a reverse proxy. The simulated mode works without configuration.</p>
+                  <div className="bg-amber-900/20 border border-amber-500/20 p-4 rounded-xl flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-amber-200">Self-Hosted Infrastructure</p>
+                      <p className="text-xs text-amber-200/60">Ensure your n8n instance allows CORS from this domain, or set up a reverse proxy. The simulated mode works without configuration.</p>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
