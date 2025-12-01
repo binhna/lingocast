@@ -37,21 +37,17 @@ const INITIAL_PODCASTS: Podcast[] = [
     title: 'Nick and the Legendary Surfboard',
     topic: 'A story about surfing',
     words: ['surf', 'ocean', 'legendary'],
-    // 🔴 IMPORTANT: PASTE YOUR REAL GOOGLE DRIVE LINK BELOW 🔴
-    // It must look like: https://drive.google.com/uc?export=download&id=YOUR_FILE_ID
-    audioUrl: 'https://drive.google.com/uc?export=download&id=1UVZrbhck2Tmjg77rOyOszN1fS9mNtbpt', 
-    transcript: "Nick paddled out into the cold ocean...",
-    duration: '05:00',
-    createdAt: new Date(),
-  },
-  {
-    id: '2',
-    title: 'TEST',
-    topic: 'TEST',
-    words: ['surf', 'ocean', 'legendary'],
-    // 🔴 IMPORTANT: PASTE YOUR REAL GOOGLE DRIVE LINK BELOW 🔴
-    // It must look like: https://drive.google.com/uc?export=download&id=YOUR_FILE_ID
-    audioUrl: 'https://actions.google.com/sounds/v1/ambiences/coffee_shop.ogg', 
+    
+    // 🟢 STORAGE CONFIGURATION 🟢
+    // 1. Go to Supabase > Storage > New Bucket (Make it Public!)
+    // 2. Upload file -> Click "Get URL"
+    // 3. Paste it here:
+    
+    audioUrl: 'https://xgitkcmskcqghwaiioue.supabase.co/storage/v1/object/public/podcasts/NickAndTheLegendarySurfboard_podcast_output.mp3',
+    
+    // 🧪 TEST LINK: This works 100%. If your link fails, try this one to prove the player works.
+    // audioUrl: 'https://actions.google.com/sounds/v1/ambiences/coffee_shop.ogg',
+    
     transcript: "Nick paddled out into the cold ocean...",
     duration: '05:00',
     createdAt: new Date(),
@@ -195,7 +191,7 @@ export default function App() {
       const onEnded = () => setIsPlaying(false);
       const onError = (e: Event) => {
         console.error("Audio Load Error:", e, audio.error);
-        alert(`Error playing audio. Code: ${audio.error?.code}. Message: ${audio.error?.message}. \n\nTip: Google Drive blocks large WAV files. Try using an MP3.`);
+        alert(`Error playing audio. Code: ${audio.error?.code}. Message: ${audio.error?.message}. \n\nCheck if your Storage link is public.`);
         setIsPlaying(false);
       };
 
