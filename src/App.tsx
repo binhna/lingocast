@@ -39,7 +39,7 @@ const INITIAL_PODCASTS: Podcast[] = [
     words: ['surf', 'ocean', 'legendary'],
     // 🔴 IMPORTANT: PASTE YOUR REAL GOOGLE DRIVE LINK BELOW 🔴
     // It must look like: https://drive.google.com/uc?export=download&id=YOUR_FILE_ID
-    audioUrl: 'https://drive.google.com/uc?export=download&id=1uf41JhMVdWt18vwa_OtD93kiR2uXwDtw', 
+    audioUrl: 'https://drive.google.com/uc?export=download&id=1UVZrbhck2Tmjg77rOyOszN1fS9mNtbpt', 
     transcript: "Nick paddled out into the cold ocean...",
     duration: '05:00',
     createdAt: new Date(),
