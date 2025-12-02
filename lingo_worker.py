@@ -27,7 +27,8 @@ GENERATOR_SCRIPT_PATH = "/home/ben/projects/others/chatterbox/inference/effortle
 CHATTERBOX_DIR = "/home/ben/projects/others/chatterbox"
 
 # Template file path
-STORY_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "story_template.txt")
+# We will use the external prompt file as requested
+STORY_TEMPLATE_PATH = "/home/ben/projects/others/chatterbox/prompt_no_tone.md"
 
 # Temporary folder to save the generated audio file
 OUTPUT_DIR = "/home/ben/projects/others/chatterbox/output_audio" #os.path.join(os.path.expanduser('~'), 'lingocast_output')
@@ -55,30 +56,80 @@ def load_story_template():
         # Don't use fallback - let the error bubble up to the web
         raise Exception(f"Template file not found at {STORY_TEMPLATE_PATH}")
 
-def generate_story_mock(topic, words, main_voice, guest_voice):
-    """Simple story generator - real content will come from LLM later."""
+def generate_story_real(topic, words, main_voice, guest_voice, word_count):
+    """Generates a story using Google Gemini API via REST (requests)."""
     story_title = f"Story about {topic}"
     
+    api_key = os.getenv('GOOGLE_API_KEY')
+    if not api_key:
+        raise Exception("GOOGLE_API_KEY not found in environment variables")
+
     # Load template from external file
     try:
         with open(STORY_TEMPLATE_PATH, 'r', encoding='utf-8') as f:
             template = f.read()
     except FileNotFoundError:
-        # If template missing, return error instead of fallback
-        raise Exception(f"Template file not found at {STORY_TEMPLATE_PATH}")
+        raise Exception(f"Prompt template file not found at {STORY_TEMPLATE_PATH}")
     
-    # Simple template substitution
-    story_transcript = template.format(
-        topic=topic,
-        words=", ".join(words) if words else "no words provided"
-    )
+    # Prepare the prompt
+    prompt = template.replace("anything in australia", topic)
+    prompt = prompt.replace("[Insert comma-separated list here]", ", ".join(words) if words else "None")
+    
+    # Adjust length based on duration
+    prompt = prompt.replace("2500-word", f"{word_count}-word")
+    
+    print(f"Sending prompt to Gemini (Topic: {topic}, Length: {word_count} words)...")
+    
+    # Use Gemini REST API directly to avoid Python version compatibility issues with the SDK
+    # Using gemini-1.5-flash as suggested (corrected from 2.5)
+    model_name = "gemini-2.5-flash-lite"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key
+    }
+    
+    data = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        
+        if response.status_code != 200:
+            print(f"Response status code: {response.status_code}")
+            print(f"Response body: {response.text}")
+            raise Exception(f"API Error {response.status_code}: {response.text}")
+            
+        result = response.json()
+        
+        # Extract text from response
+        # Structure: candidates[0].content.parts[0].text
+        if 'candidates' in result and result['candidates']:
+            story_transcript = result['candidates'][0]['content']['parts'][0]['text']
+        else:
+            raise Exception(f"No content generated. Response: {result}")
+        
+        # Clean up potential markdown code blocks
+        if story_transcript.startswith("```"):
+            story_transcript = story_transcript.strip("`")
+            if story_transcript.startswith("xml") or story_transcript.startswith("html"):
+                story_transcript = story_transcript[3:]
+        
+        story_transcript = story_transcript.strip()
+        
+    except Exception as e:
+        raise Exception(f"Gemini API Error: {e}")
     
     # Save input for TTS script
     input_txt_path = os.path.join(OUTPUT_DIR, "input.txt")
-    with open(input_txt_path, "w") as f:
-        f.write(story_transcript.strip())
+    with open(input_txt_path, "w", encoding='utf-8') as f:
+        f.write(story_transcript)
         
-    return story_title, story_transcript.strip(), input_txt_path
+    return story_title, story_transcript, input_txt_path
 
 def run_local_tts_script(input_txt_path, main_voice, guest_voice):
     """
@@ -220,18 +271,22 @@ def upload_to_supabase(file_path, file_name):
 def handle_generate():
     """Handles the request from the n8n HTTP Request node."""
     data = request.json
-    topic = data.get('topic', 'unknown topic')
+    topic = data.get('topic', 'anything in australia')
     words = data.get('words', [])
     main_voice = data.get('mainVoice', 'albo') # Get new parameter
     guest_voice = data.get('guestVoice', 'lachlan') # Get new parameter
+    duration_minutes = data.get('duration', 2) # Default to 2 minutes if not provided
+
+    # Calculate word count (approx 150 words per minute)
+    word_count = int(duration_minutes * 140)
 
     # Remove the hardcoded word limit - use whatever words are provided
     print(f"\n--- Starting Job ---")
-    print(f"Topic: {topic}, Words: {words}, Voices: {main_voice}/{guest_voice}")
+    print(f"Topic: {topic}, Words: {words}, Voices: {main_voice}/{guest_voice}, Duration: {duration_minutes}m ({word_count} words)")
 
     try:
         # 1. GENERATE STORY & PREPARE INPUT.TXT
-        story_title, story_transcript, input_txt_path = generate_story_mock(topic, words, main_voice, guest_voice)
+        story_title, story_transcript, input_txt_path = generate_story_real(topic, words, main_voice, guest_voice, word_count)
         
         # 2. RUN LOCAL TTS SCRIPT
         success, result = run_local_tts_script(input_txt_path, main_voice, guest_voice)

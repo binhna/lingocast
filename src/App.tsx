@@ -150,6 +150,7 @@ export default function App() {
   // Generator State
   const [topic, setTopic] = useState('');
   const [words, setWords] = useState<string[]>([]);
+  const [duration, setDuration] = useState(5); // Default 5 minutes
   const [isGenerating, setIsGenerating] = useState(false);
   const [progressStep, setProgressStep] = useState(0);
   const [statusMsg, setStatusMsg] = useState('');
@@ -164,7 +165,7 @@ export default function App() {
   // --- AUDIO PLAYER STATE ---
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Fetch episodes from database
@@ -206,8 +207,9 @@ export default function App() {
         body: JSON.stringify({ 
           topic: topic, 
           words: words,
-          mainVoice: settings.mainVoice, // NEW
-          guestVoice: settings.guestVoice // NEW
+          mainVoice: settings.mainVoice, 
+          guestVoice: settings.guestVoice,
+          duration: duration // Send duration to backend
         })
       });
 
@@ -263,7 +265,7 @@ export default function App() {
       audioRef.current = audio;
 
       // Event Listeners
-      const onLoadedMetadata = () => setDuration(audio.duration);
+      const onLoadedMetadata = () => setAudioDuration(audio.duration);
       const onTimeUpdate = () => setCurrentTime(audio.currentTime);
       const onEnded = () => setIsPlaying(false);
       const onError = (e: Event) => {
@@ -385,6 +387,26 @@ export default function App() {
                     <label className="block text-sm font-medium text-slate-400 mb-2">Target Vocabulary</label>
                     <TagInput words={words} setWords={setWords} />
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">
+                      Target Duration: <span className="text-indigo-400">{duration} minutes</span>
+                    </label>
+                    <input 
+                      type="range" 
+                      min="1" 
+                      max="15" 
+                      step="1"
+                      value={duration} 
+                      onChange={(e) => setDuration(parseInt(e.target.value))}
+                      className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                    />
+                    <div className="flex justify-between text-xs text-slate-600 mt-1 font-mono">
+                      <span>1 min</span>
+                      <span>15 mins</span>
+                    </div>
+                  </div>
+
                   <div className="pt-4">
                     {!isGenerating ? (
                       <Button onClick={handleGenerate} className="w-full py-4 text-lg" icon={BookOpen} disabled={!topic || words.length === 0}>Generate Podcast</Button>
@@ -466,13 +488,13 @@ export default function App() {
                   <div className="p-6 bg-slate-900 border-t border-slate-800">
                     <div className="flex items-center justify-between text-xs text-slate-500 mb-2 font-mono">
                       <span>{formatTime(currentTime)}</span>
-                      <span>{formatTime(duration)}</span>
+                      <span>{formatTime(audioDuration)}</span>
                     </div>
                     
                     <input 
                       type="range" 
                       min={0} 
-                      max={duration || 100} 
+                      max={audioDuration || 100} 
                       value={currentTime} 
                       onChange={handleSeek}
                       className="w-full h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-indigo-500 mb-6"
