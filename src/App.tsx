@@ -11,7 +11,12 @@ import {
   BookOpen, 
   Mic2,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  Repeat,
+  ListMusic,
+  ArrowLeft,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 // Initialize Supabase client
@@ -167,6 +172,19 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // UI State
+  const [isMobilePlayerOpen, setIsMobilePlayerOpen] = useState(false);
+  const [playMode, setPlayMode] = useState<'single' | 'loop' | 'playlist'>('playlist');
+  const [showWebhook, setShowWebhook] = useState(false);
+
+  // Refs for Event Handlers (to avoid stale closures in audio effect)
+  const playModeRef = useRef(playMode);
+  const podcastsRef = useRef(podcasts);
+  const autoPlayRef = useRef(false);
+
+  useEffect(() => { playModeRef.current = playMode; }, [playMode]);
+  useEffect(() => { podcastsRef.current = podcasts; }, [podcasts]);
 
   // Fetch episodes from database
   useEffect(() => {
@@ -265,12 +283,43 @@ export default function App() {
       audioRef.current = audio;
 
       // Event Listeners
-      const onLoadedMetadata = () => setAudioDuration(audio.duration);
+      const onLoadedMetadata = () => {
+        setAudioDuration(audio.duration);
+        if (autoPlayRef.current) {
+            audio.play().catch(e => console.error("Autoplay failed", e));
+            setIsPlaying(true);
+            autoPlayRef.current = false;
+        }
+      };
       const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-      const onEnded = () => setIsPlaying(false);
+      
+      const onEnded = () => {
+        const mode = playModeRef.current;
+        if (mode === 'loop') {
+            audio.currentTime = 0;
+            audio.play();
+        } else if (mode === 'playlist') {
+            const list = podcastsRef.current;
+            // Find current index. Note: podcasts might be sorted differently than display? 
+            // Assuming podcastsRef matches the display order.
+            const idx = list.findIndex(p => p.id === currentPodcast.id);
+            // Play NEXT (index - 1 if sorted desc? No, list is usually 0..N)
+            // If list is ordered by created_at desc, then index 0 is newest.
+            // "Next" usually means "Older" in a podcast feed, or "Newer"?
+            // Let's assume standard playlist behavior: Next in the array.
+            if (idx !== -1 && idx < list.length - 1) {
+                autoPlayRef.current = true;
+                setCurrentPodcast(list[idx + 1]);
+            } else {
+                setIsPlaying(false);
+            }
+        } else {
+            setIsPlaying(false);
+        }
+      };
+
       const onError = (e: Event) => {
         console.error("Audio Load Error:", e, audio.error);
-        alert(`Error: Audio file failed to load. Check that the Supabase link is valid and Public.`);
         setIsPlaying(false);
       };
 
@@ -279,7 +328,9 @@ export default function App() {
       audio.addEventListener('ended', onEnded);
       audio.addEventListener('error', onError);
 
-      setIsPlaying(false);
+      if (!autoPlayRef.current) {
+          setIsPlaying(false);
+      }
       setCurrentTime(0);
 
       return () => {
@@ -332,7 +383,7 @@ export default function App() {
       {/* Navbar */}
       <nav className="border-b border-slate-800 bg-slate-950/50 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('generate')}>
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
               <Headphones className="w-5 h-5 text-white" />
             </div>
@@ -437,7 +488,7 @@ export default function App() {
         {(activeTab === 'library' || activeTab === 'settings') && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
             {/* List */}
-            <div className={`lg:col-span-4 space-y-4 ${currentPodcast && activeTab !== 'settings' ? 'hidden lg:block' : 'block'} ${activeTab === 'settings' ? 'hidden' : ''}`}>
+            <div className={`lg:col-span-4 space-y-4 ${activeTab === 'settings' ? 'hidden' : (isMobilePlayerOpen && currentPodcast ? 'hidden lg:block' : 'block')}`}>
               <h2 className="text-xl font-bold text-white mb-4">Your Library</h2>
               {isLoading ? (
                 <div className="text-center text-slate-500 py-8">
@@ -450,7 +501,7 @@ export default function App() {
                 </div>
               ) : (
                 podcasts.map((pod) => (
-                <div key={pod.id} onClick={() => { setCurrentPodcast(pod); setActiveTab('library'); }} className={`p-4 rounded-xl border cursor-pointer hover:bg-slate-800 transition-all ${currentPodcast?.id === pod.id ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-slate-900/50 border-slate-800'}`}>
+                <div key={pod.id} onClick={() => { setCurrentPodcast(pod); setActiveTab('library'); setIsMobilePlayerOpen(true); }} className={`p-4 rounded-xl border cursor-pointer hover:bg-slate-800 transition-all ${currentPodcast?.id === pod.id ? 'bg-indigo-900/20 border-indigo-500/50' : 'bg-slate-900/50 border-slate-800'}`}>
                   <h3 className="font-semibold text-slate-200">{pod.title}</h3>
                   <p className="text-xs text-slate-500">{pod.topic || 'No topic'}</p>
                 </div>
@@ -459,10 +510,13 @@ export default function App() {
             </div>
 
             {/* Player View */}
-            <div className={`lg:col-span-8 ${activeTab === 'settings' ? 'hidden' : (!currentPodcast ? 'hidden lg:flex items-center justify-center' : 'block')}`}>
+            <div className={`lg:col-span-8 ${activeTab === 'settings' ? 'hidden' : ''} ${isMobilePlayerOpen && currentPodcast ? 'block' : 'hidden lg:block'} ${!currentPodcast ? 'lg:flex lg:items-center lg:justify-center' : ''}`}>
               {currentPodcast ? (
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
                   <div className="p-6 border-b border-slate-800 bg-gradient-to-r from-slate-900 to-indigo-950/30">
+                    <button onClick={() => setIsMobilePlayerOpen(false)} className="lg:hidden mb-4 flex items-center text-slate-400 hover:text-white transition-colors">
+                        <ArrowLeft className="w-4 h-4 mr-2" /> Back to Library
+                    </button>
                     <h2 className="text-2xl font-bold text-white">{currentPodcast.title}</h2>
                     <div className="flex items-center gap-2 text-sm text-indigo-300 mt-1"><CheckCircle2 className="w-4 h-4" /> Synced</div>
                   </div>
@@ -507,6 +561,23 @@ export default function App() {
                       </button>
                       <button onClick={() => {if(audioRef.current) audioRef.current.currentTime += 10}} className="text-slate-400 hover:text-white"><SkipForward className="w-6 h-6" /></button>
                     </div>
+
+                    <div className="flex items-center justify-center gap-6 mt-8 border-t border-slate-800/50 pt-6">
+                        <button 
+                            onClick={() => setPlayMode(playMode === 'loop' ? 'single' : 'loop')} 
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${playMode === 'loop' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`} 
+                            title="Loop Single"
+                        >
+                            <Repeat className="w-4 h-4" /> Loop
+                        </button>
+                        <button 
+                            onClick={() => setPlayMode(playMode === 'playlist' ? 'single' : 'playlist')} 
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${playMode === 'playlist' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`} 
+                            title="Play All"
+                        >
+                            <ListMusic className="w-4 h-4" /> Autoplay
+                        </button>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -520,8 +591,19 @@ export default function App() {
                 <h2 className="text-2xl font-bold text-white mb-6">Backend Configuration</h2>
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
                   <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-2">n8n Webhook URL</label>
-                    <input type="text" value={settings.n8nWebhookUrl} onChange={(e) => setSettings({...settings, n8nWebhookUrl: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200" />
+                    <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-slate-400">n8n Webhook URL</label>
+                        <button onClick={() => setShowWebhook(!showWebhook)} className="text-slate-500 hover:text-slate-300">
+                            {showWebhook ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                    </div>
+                    {showWebhook ? (
+                        <input type="text" value={settings.n8nWebhookUrl} onChange={(e) => setSettings({...settings, n8nWebhookUrl: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200" />
+                    ) : (
+                        <div className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-slate-600 italic">
+                            Hidden for security
+                        </div>
+                    )}
                   </div>
                   {/* Voice settings are already in the Generator tab, removed from here for clarity */}
                 </div>
