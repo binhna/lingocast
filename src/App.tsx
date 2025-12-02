@@ -43,12 +43,14 @@ interface AppSettings {
   guestVoice: string; // New state field
 }
 
-// --- VOICE OPTIONS (Example voices from your script context: albo, lachlan) ---
+// --- VOICE OPTIONS ---
 const VOICE_OPTIONS = [
-  { id: 'albo', name: 'Albo (Speaker A)' },
-  { id: 'lachlan', name: 'Lachlan (Speaker B)' },
-  { id: 'custom_m', name: 'Narrator Male' },
-  { id: 'custom_f', name: 'Narrator Female' },
+  { id: 'albo', name: 'Albo (Male)' },
+  { id: 'albo2', name: 'Albo V1 (Male)' },
+  { id: 'lachlan', name: 'Lachlan (Male)' },
+  { id: 'ron', name: 'Ron (Male)' },
+  { id: 'fatima', name: 'Fatima (Female)' },
+  { id: 'oz', name: 'Oz Accent (Male)' },
 ];
 
 
@@ -678,6 +680,20 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-800 bg-slate-950/50 backdrop-blur-xl py-8 mt-auto">
+        <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-500">
+            <div className="flex items-center gap-2">
+                <span className="font-medium text-slate-400">LingoCast.ai</span>
+                <span>© {new Date().getFullYear()}</span>
+            </div>
+            <div className="flex flex-col md:flex-row items-center gap-1 md:gap-6">
+                <span>Created by <span className="text-slate-300 font-medium">An-Binh (Ben) Nguyen</span></span>
+                <a href="mailto:morningben96@gmail.com" className="hover:text-indigo-400 transition-colors">morningben96@gmail.com</a>
+            </div>
+        </div>
+      </footer>
     </div>
   );
 }
