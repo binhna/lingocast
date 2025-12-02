@@ -26,7 +26,7 @@ interface Podcast {
   topic?: string;
   words?: string[];
   audio_url?: string; 
-  transcript: string;
+  transcript: string | { start: number; end: number; text: string }[]; // Can be string (old) or JSON array (new)
   created_at?: string;
 }
 
@@ -91,6 +91,50 @@ const TagInput = ({ words, setWords }: { words: string[], setWords: (w: string[]
         placeholder="Type word & Enter..."
         className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
       />
+    </div>
+  );
+};
+
+const TimedTranscriptDisplay = ({ 
+  transcript, 
+  currentTime 
+}: { 
+  transcript: { start: number; end: number; text: string }[], 
+  currentTime: number 
+}) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const activeIndex = transcript.findIndex(
+    (line) => currentTime >= line.start && currentTime <= line.end
+  );
+
+  useEffect(() => {
+    if (activeIndex !== -1 && scrollRef.current) {
+      const activeElement = scrollRef.current.children[activeIndex] as HTMLElement;
+      if (activeElement) {
+        activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [activeIndex]);
+
+  return (
+    <div ref={scrollRef} className="h-full overflow-y-auto p-6 space-y-4">
+      {transcript.map((line, index) => {
+        const isActive = index === activeIndex;
+        return (
+          <div 
+            key={index} 
+            className={`transition-all duration-300 ${
+              isActive 
+                ? 'bg-indigo-500/20 border-l-4 border-indigo-500 pl-4 py-2 rounded-r-lg' 
+                : 'text-slate-400 hover:text-slate-300 pl-4 border-l-4 border-transparent'
+            }`}
+          >
+            <p className={`text-lg leading-relaxed ${isActive ? 'text-white font-medium' : ''}`}>
+              {line.text}
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -401,8 +445,21 @@ export default function App() {
                     <div className="flex items-center gap-2 text-sm text-indigo-300 mt-1"><CheckCircle2 className="w-4 h-4" /> Synced</div>
                   </div>
                   
-                  <div className="p-8 h-[350px] overflow-y-auto bg-slate-950/50 leading-relaxed text-lg text-slate-300">
-                     {currentPodcast.transcript.split('\n').map((para, i) => <p key={i} className="mb-4">{para}</p>)}
+                  <div className="h-[350px] bg-slate-950/50">
+                    {Array.isArray(currentPodcast.transcript) ? (
+                      <TimedTranscriptDisplay 
+                        transcript={currentPodcast.transcript} 
+                        currentTime={currentTime} 
+                      />
+                    ) : (
+                      <div className="p-8 h-full overflow-y-auto leading-relaxed text-lg text-slate-300">
+                        {typeof currentPodcast.transcript === 'string' ? (
+                          currentPodcast.transcript.split('\n').map((para, i) => <p key={i} className="mb-4">{para}</p>)
+                        ) : (
+                          <p>Invalid transcript format</p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* REAL AUDIO CONTROLS */}
