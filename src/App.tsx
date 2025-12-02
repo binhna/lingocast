@@ -16,7 +16,9 @@ import {
   ListMusic,
   ArrowLeft,
   Eye,
-  EyeOff
+  EyeOff,
+  Lock,
+  Unlock
 } from 'lucide-react';
 
 // Initialize Supabase client
@@ -177,6 +179,11 @@ export default function App() {
   const [isMobilePlayerOpen, setIsMobilePlayerOpen] = useState(false);
   const [playMode, setPlayMode] = useState<'single' | 'loop' | 'playlist'>('playlist');
   const [showWebhook, setShowWebhook] = useState(false);
+  
+  // Settings Security
+  const [isSettingsUnlocked, setIsSettingsUnlocked] = useState(false);
+  const [passcodeInput, setPasscodeInput] = useState('');
+  const [passcodeError, setPasscodeError] = useState(false);
 
   // Refs for Event Handlers (to avoid stale closures in audio effect)
   const playModeRef = useRef(playMode);
@@ -375,6 +382,18 @@ export default function App() {
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const handleUnlockSettings = () => {
+    const correctPasscode = import.meta.env.VITE_SETTINGS_PASSCODE || '2295';
+    if (passcodeInput === correctPasscode) {
+        setIsSettingsUnlocked(true);
+        setPasscodeError(false);
+        setPasscodeInput('');
+    } else {
+        setPasscodeError(true);
+        setPasscodeInput('');
+    }
   };
 
   return (
@@ -588,25 +607,52 @@ export default function App() {
             {/* SETTINGS VIEW */}
             {activeTab === 'settings' && (
               <div className="lg:col-span-12 max-w-2xl mx-auto space-y-6 animate-in slide-in-from-bottom-4 fade-in duration-500 w-full">
-                <h2 className="text-2xl font-bold text-white mb-6">Backend Configuration</h2>
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm font-medium text-slate-400">n8n Webhook URL</label>
-                        <button onClick={() => setShowWebhook(!showWebhook)} className="text-slate-500 hover:text-slate-300">
-                            {showWebhook ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                    </div>
-                    {showWebhook ? (
-                        <input type="text" value={settings.n8nWebhookUrl} onChange={(e) => setSettings({...settings, n8nWebhookUrl: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200" />
-                    ) : (
-                        <div className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-slate-600 italic">
-                            Hidden for security
+                {!isSettingsUnlocked ? (
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 flex flex-col items-center justify-center space-y-6 text-center">
+                        <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-2">
+                            <Lock className="w-8 h-8 text-slate-400" />
                         </div>
-                    )}
-                  </div>
-                  {/* Voice settings are already in the Generator tab, removed from here for clarity */}
-                </div>
+                        <div>
+                            <h2 className="text-2xl font-bold text-white mb-2">Restricted Access</h2>
+                            <p className="text-slate-400">Please enter the passcode to access settings.</p>
+                        </div>
+                        <div className="w-full max-w-xs space-y-4">
+                            <input 
+                                type="password" 
+                                value={passcodeInput}
+                                onChange={(e) => { setPasscodeInput(e.target.value); setPasscodeError(false); }}
+                                onKeyDown={(e) => e.key === 'Enter' && handleUnlockSettings()}
+                                placeholder="Enter Passcode"
+                                className={`w-full bg-slate-950 border ${passcodeError ? 'border-red-500 focus:ring-red-500/50' : 'border-slate-700 focus:ring-indigo-500/50'} rounded-xl px-4 py-3 text-slate-200 text-center tracking-widest focus:outline-none focus:ring-2 transition-all`}
+                                autoFocus
+                            />
+                            {passcodeError && <p className="text-red-400 text-sm font-medium">Incorrect passcode. Please try again.</p>}
+                            <Button onClick={handleUnlockSettings} className="w-full" icon={Unlock}>Unlock Settings</Button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <h2 className="text-2xl font-bold text-white mb-6">Backend Configuration</h2>
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="block text-sm font-medium text-slate-400">n8n Webhook URL</label>
+                                <button onClick={() => setShowWebhook(!showWebhook)} className="text-slate-500 hover:text-slate-300">
+                                    {showWebhook ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
+                            </div>
+                            {showWebhook ? (
+                                <input type="text" value={settings.n8nWebhookUrl} onChange={(e) => setSettings({...settings, n8nWebhookUrl: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-slate-200" />
+                            ) : (
+                                <div className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-slate-600 italic">
+                                    Hidden for security
+                                </div>
+                            )}
+                        </div>
+                        {/* Voice settings are already in the Generator tab, removed from here for clarity */}
+                        </div>
+                    </>
+                )}
               </div>
             )}
           </div>
