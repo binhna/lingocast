@@ -223,8 +223,26 @@ export default function App() {
     if (!topic || words.length === 0) return;
     setIsGenerating(true);
     setProgressStep(0);
-    setStatusMsg("Connecting to Server...");
+    setStatusMsg("Starting generation...");
     
+    // Estimated wait time: duration * 0.35 minutes (converted to ms)
+    // e.g., 5 min audio -> 1.75 min wait -> 105 seconds
+    const estimatedTimeMs = duration * 0.35 * 60 * 1000;
+    const startTime = Date.now();
+    
+    // Start a timer to update progress
+    const progressInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        // Cap at 95% until it actually finishes
+        const percent = Math.min(95, Math.floor((elapsed / estimatedTimeMs) * 100));
+        setProgressStep(percent);
+        
+        if (percent < 20) setStatusMsg("Writing story...");
+        else if (percent < 80) setStatusMsg("Synthesizing audio...");
+        else setStatusMsg("Finalizing & Uploading...");
+        
+    }, 1000);
+
     try {
       const response = await fetch(settings.n8nWebhookUrl, {
         method: 'POST',
@@ -239,12 +257,13 @@ export default function App() {
       });
 
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
-      setStatusMsg("Synthesizing Audio...");
-      setProgressStep(2);
-
+      
       const data = await response.json();
-      setStatusMsg("Finalizing...");
-      setProgressStep(4);
+      
+      // Force 100% on completion
+      clearInterval(progressInterval);
+      setProgressStep(100);
+      setStatusMsg("Done!");
       await new Promise(r => setTimeout(r, 500));
 
       // Refresh episodes from database
@@ -270,6 +289,7 @@ export default function App() {
       setWords([]);
 
     } catch (error) {
+      clearInterval(progressInterval);
       alert("Failed to connect or generate! Check the n8n execution log.");
     } finally {
       setIsGenerating(false);
@@ -485,7 +505,7 @@ export default function App() {
                         <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
                         <p className="font-medium text-white">{statusMsg}</p>
                         <div className="w-64 h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2">
-                          <div className="h-full bg-indigo-500 transition-all duration-500 ease-out" style={{ width: `${((progressStep + 1) / 5) * 100}%` }} />
+                          <div className="h-full bg-indigo-500 transition-all duration-500 ease-out" style={{ width: `${progressStep}%` }} />
                         </div>
                       </div>
                     )}
